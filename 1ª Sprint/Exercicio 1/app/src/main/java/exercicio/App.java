@@ -55,7 +55,7 @@ public class App {
     public static void main(String[] args) {
         System.out.println("--- Análise Criptográfica de Força Bruta (Cifra de César) ---\n");
         
-        System.out.printf("%-20s | %-20s | %-15s\n", "ALUNO (Texto Claro)", "CÓDIGO ENCRIPTADO", "DESLOCAMENTO (K)");
+        System.out.printf("%-20s | %-20s | %-15s\n", "CÓDIGO DESENCRIPTADO", "CÓDIGO ENCRIPTADO", "DESLOCAMENTO (K)");
         System.out.println("------------------------------------------------------------------");
 
         for (Map.Entry<String, String> entry : DADOS_ALUNOS.entrySet()) {
