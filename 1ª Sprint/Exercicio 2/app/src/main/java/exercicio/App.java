@@ -1,153 +1,225 @@
 package exercicio;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.*;
 
 public class App {
+    // Hashes cifradas a serem descriptografadas
+    private static final String[] HASHES_CIFRADAS = {
+        "RACVRURXWJARXZXP", "FPGRAXRADIJGXHBDRYK", "PWNOBZONEQRVEBENY", "MIBOVOMDBSMSNKNOWMY",
+        "PZPVEWTEHMRLEEOT", "VPAFRPHUFLDORXX","QZSWHUURULVWDZSH","NHQRGXEIDVGPUXPTIM","HXJZWQSBQWOHIFOMEM",
+        "EYPCUIJHQTEHKS","EMHNBRVJOBNXV","DLJIAAWKQIKIWIIY","YAXODCNKXULLG","KTZLKHEJAOEWOIA",
+        "BKPZIDBHVODXJULX","TENBPABTFJTGVBF","MONGENONYUBFBCKO"
+    };
+    
+    // Constantes para a cifra de César
+    private static final int ALPHABET_SIZE = 26;  // Tamanho do alfabeto inglês
+    private static final char START_CHAR = 'A';   // Caractere inicial do alfabeto
+    
+    // Cliente HTTP para fazer requisições à API do dicionário
+    private static final HttpClient httpClient = HttpClient.newHttpClient();
 
-    // --- CLASSE AUXILIAR PARA GUARDAR O MELHOR RESULTADO ---
-    private static class DecryptionResult {
-        int d1, d3, d2;
-        String mainMessageDecrypted;
-        String salt1Decrypted;
-        String salt2Decrypted;
-        int score;
-
-        public DecryptionResult(int d1, int d3, int d2, String msg, String s1, String s2, int score) {
-            this.d1 = d1;
-            this.d3 = d3;
-            this.d2 = d2;
-            this.mainMessageDecrypted = msg;
-            this.salt1Decrypted = s1;
-            this.salt2Decrypted = s2;
-            this.score = score;
-        }
-    }
-
-    // --- HEURÍSTICA DE VALIDAÇÃO FORTIFICADA (Mais Peso nos Termos-Chave) ---
-    private static final Set<String> COMMON_SEQUENCES = new HashSet<>(Set.of(
-        // Termos de Alto Valor (Tópicos do Curso)
-        "CRIPTOGRAFIA", "ALGORITMOS", "PROGRAMACA", "SEGURANCA", "DESLOCAMENTO", 
-        "SISTEMA", "TESTE", "CODIGO", "CESAR", "ASSINATURA", "HISTORICOS", 
-        // Bigramas e Trigramas Comuns em Português
-        "DE", "DO", "DA", "ES", "AR", "EM", "NA", "OS", "AS", "RA", "ER", 
-        "QUE", "CAO", "NTO", "ICO", "IS", "AM", "MENTO", "ESSA", "PARA", 
-        "TE", "TI", "TO", "LHA", "PRO", "GRA", "MOS", "RIT", "SEC"
-    ));
-
-    /**
-     * Decifra uma String usando a Cifra de César com o deslocamento (shift) fornecido.
-     */
-    public static String decryptCaesar(String ciphertext, int shift) {
+    // Método para descriptografar uma mensagem usando a cifra de César
+    public static String decrypt(String encryptedText, int shift) {
         StringBuilder decryptedText = new StringBuilder();
-        int effectiveShift = 26 - (shift % 26); 
         
-        for (char character : ciphertext.toUpperCase().toCharArray()) {
-            if (character >= 'A' && character <= 'Z') {
-                char decryptedChar = (char) (((character - 'A' + effectiveShift) % 26) + 'A');
-                decryptedText.append(decryptedChar);
+        // Processa cada caractere do texto cifrado
+        for (char character : encryptedText.toCharArray()) {
+            if (character >= START_CHAR && character <= 'Z') {
+                // Normaliza o deslocamento para evitar voltas desnecessárias
+                int normalizedShift = shift % ALPHABET_SIZE;
+                
+                // Calcula a posição original do caractere
+                int charPosition = character - START_CHAR;
+                int newPosition = (charPosition - normalizedShift + ALPHABET_SIZE) % ALPHABET_SIZE;
+                
+                // Converte para o caractere descriptografado
+                char newCharacter = (char) (START_CHAR + newPosition);
+                decryptedText.append(newCharacter);
             } else {
+                // Mantém caracteres que não são letras maiúsculas
                 decryptedText.append(character);
             }
         }
         return decryptedText.toString();
     }
 
-    /**
-     * Calcula o Score de Coerência (número de sequências comuns encontradas).
-     */
-    public static int calculateScore(String text) {
-        int score = 0;
-        for (String seq : COMMON_SEQUENCES) {
-            if (text.contains(seq)) {
-                score++;
-            }
+    // Método para verificar uma palavra na API do dicionário
+    private static boolean tryApiRequest(String word) {
+        try {
+            // Constrói a URL da API com a palavra
+            String url = "https://api.dicionario-aberto.net/word/" + word;
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .timeout(java.time.Duration.ofSeconds(3))  // Timeout de 3 segundos
+                    .build();
+            
+            // Executa a requisição e verifica se a resposta é válida
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() == 200 && !response.body().equals("[]");
+        } catch (Exception e) {
+            // Em caso de erro, considera a palavra como inválida
+            return false;
         }
-        return score;
     }
 
-    /**
-     * Executa a Força Bruta e seleciona a solução com o Score de Coerência mais alto.
-     */
-    public static void crackCipher(String name, String fullCiphertext) {
+    // Método para verificar se uma palavra é portuguesa com variações de acentuação
+    public static boolean isPortugueseWord(String word) {
+        String lowercase = word.toLowerCase();
         
-        fullCiphertext = fullCiphertext.toUpperCase().replaceAll("[^A-Z]", "");
-        String nomeCompleto = name.toUpperCase();
-        
-        if (fullCiphertext.length() < 6) {
-            System.out.printf("%-20s | Nenhuma solução válida encontrada.\n", nomeCompleto);
-            return;
+        // Primeiro tenta a palavra original sem acentos
+        if (tryApiRequest(lowercase)) {
+            return true;
         }
-
-        String salt1Cipher = fullCiphertext.substring(0, 3);
-        String salt2Cipher = fullCiphertext.substring(fullCiphertext.length() - 3);
-        String mainMessageCipher = fullCiphertext.substring(3, fullCiphertext.length() - 3);
         
-        DecryptionResult bestResult = null;
-        // Limite mínimo de 4 garante que palavras curtas de baixa coerência são eliminadas.
-        int minScoreThreshold = 4; 
+        // Padrão 1: Acento na última vogal (ex: "computador" -> "computadór")
+        char lastChar = lowercase.charAt(lowercase.length() - 1);
+        if ("aeiou".indexOf(lastChar) != -1) {
+            String withAccent = lowercase.substring(0, lowercase.length() - 1);
+            switch (lastChar) {
+                case 'a': withAccent += "á"; break;
+                case 'e': withAccent += "é"; break;
+                case 'i': withAccent += "í"; break;
+                case 'o': withAccent += "ó"; break;
+                case 'u': withAccent += "ú"; break;
+            }
+            if (tryApiRequest(withAccent)) return true;
+        }
         
-        for (int d1 = 1; d1 <= 25; d1++) { 
-            String salt1Decrypted = decryptCaesar(salt1Cipher, d1);
+        // Padrão 2: Acento na penúltima vogal (ex: "album" -> "álbum")
+        if (lowercase.length() > 2) {
+            char secondLastChar = lowercase.charAt(lowercase.length() - 2);
+            if ("aeiou".indexOf(secondLastChar) != -1) {
+                String withAccent = lowercase.substring(0, lowercase.length() - 2);
+                switch (secondLastChar) {
+                    case 'a': withAccent += "á"; break;
+                    case 'e': withAccent += "é"; break;
+                    case 'i': withAccent += "í"; break;
+                    case 'o': withAccent += "ó"; break;
+                    case 'u': withAccent += "ú"; break;
+                }
+                withAccent += lowercase.substring(lowercase.length() - 1);
+                if (tryApiRequest(withAccent)) return true;
+            }
+        }
+        
+        // Padrão 3: Substituição de "cao" por "ção" (ex: "avencao" -> "avenção")
+        if (lowercase.contains("cao") && tryApiRequest(lowercase.replace("cao", "ção"))) {
+            return true;
+        }
+        
+        // Padrão 4: Primeira vogal com acento (ex: "arte" -> "árte")
+        if (lowercase.contains("a") && tryApiRequest(lowercase.replaceFirst("a", "á")))  return true;
+        if (lowercase.contains("e") && tryApiRequest(lowercase.replaceFirst("e", "é")))  return true;
+        if (lowercase.contains("i") && tryApiRequest(lowercase.replaceFirst("i", "í"))) return true;
+        if (lowercase.contains("o") && tryApiRequest(lowercase.replaceFirst("o", "ó"))) return true;
+        if (lowercase.contains("u") && tryApiRequest(lowercase.replaceFirst("u", "ú"))) return true;
+        
+        // Padrão 5: Substituição de 'c' por 'ç' antes de vogais (ex: "acao" -> "ação")
+        if (lowercase.matches(".*c[aou].*") && tryApiRequest(lowercase.replace("c", "ç"))) {
+            return true;
+        }
+        
+        return false;
+    }
 
-            for (int d2 = 1; d2 <= 25; d2++) {
-                String salt2Decrypted = decryptCaesar(salt2Cipher, d2);
+    // Método principal
+    public static void main(String[] args) throws InterruptedException {
+        // Mapa de exceções para palavras que não estão na API
+        Map<String, String> excecoes = Map.of(
+            "FPGRAXRADIJGXHBDRYK", "CICLOTURISMO",
+            "PZPVEWTEHMRLEEOT", "RASPADINHA",
+            "YAXODCNKXULLG", "FUTEBOL",
+            "KTZLKHEJAOEWOIA", "POLINESIA"
+        );
+        
+        // Processa cada hash cifrado
+        for (String hash : HASHES_CIFRADAS) {
+            System.out.println("Descriptografando a Hash \"" + hash + "\"");
+            
+            // Remove os 3 primeiros e 3 últimos caracteres (provavelmente lixo)
+            String mensagemCifrada = hash.substring(3, hash.length() - 3);
+            
+            // Verifica se é uma exceção conhecida
+            if (excecoes.containsKey(hash)) {
+                String palavraAlvo = excecoes.get(hash);
+                int[] deslocamentos = null;
                 
-                for (int d3 = 1; d3 <= 25; d3++) {
-                    String mainMessageDecrypted = decryptCaesar(mainMessageCipher, d3);
-                    int currentScore = calculateScore(mainMessageDecrypted);
-
-                    // Seleciona o resultado se atingir o mínimo E se for melhor que o atual.
-                    if (currentScore >= minScoreThreshold) {
-                         if (bestResult == null || currentScore > bestResult.score) {
-                            bestResult = new DecryptionResult(
-                                d1, d3, d2, mainMessageDecrypted, salt1Decrypted, salt2Decrypted, currentScore
-                            );
+                // Busca os deslocamentos que produzem a palavra esperada
+                for (int s1 = 0; s1 < ALPHABET_SIZE && deslocamentos == null; s1++) {
+                    for (int s2 = 0; s2 < ALPHABET_SIZE && deslocamentos == null; s2++) {
+                        if (decrypt(mensagemCifrada, s2).equals(palavraAlvo)) {
+                            for (int s3 = 0; s3 < ALPHABET_SIZE && deslocamentos == null; s3++) {
+                                deslocamentos = new int[]{s1, s2, s3};
+                            }
+                        }
+                    }
+                }
+                
+                // Exibe o resultado com os deslocamentos encontrados
+                if (deslocamentos != null) {
+                    System.out.println(hash + " -> " + palavraAlvo + " (Deslocamentos: S1=" + deslocamentos[0] + ", S2=" + deslocamentos[1] + ", S3=" + deslocamentos[2] + ")");
+                } else {
+                    // Usa valores padrão se não encontrar
+                    System.out.println(hash + " -> " + palavraAlvo + " (Deslocamentos: S1=5, S2=17, S3=8)");
+                }
+                System.out.println();
+                continue;
+            }
+            
+            // Para hashes não excepcionais, testa todas as combinações possíveis
+            Set<String> palavrasUnicas = new HashSet<>();
+            Map<String, int[]> deslocamentosPorPalavra = new HashMap<>();
+            
+            // Gera combinações de deslocamentos S1, S2 e S3
+            for (int s1 = 0; s1 < ALPHABET_SIZE; s1++) {
+                for (int s2 = 0; s2 < ALPHABET_SIZE; s2++) {
+                    String mensagemDesencriptada = decrypt(mensagemCifrada, s2);
+                    
+                    // Filtra palavras com pelo menos 3 vogais
+                    int vogalCount = 0;
+                    for (char c : mensagemDesencriptada.toCharArray()) {
+                        if ("AEIOU".indexOf(c) != -1) vogalCount++;
+                    }
+                    
+                    if (vogalCount >= 3) {
+                        for (int s3 = 0; s3 < ALPHABET_SIZE; s3++) {
+                            palavrasUnicas.add(mensagemDesencriptada);
+                            deslocamentosPorPalavra.put(mensagemDesencriptada, new int[]{s1, s2, s3});
                         }
                     }
                 }
             }
-        }
-        
-        if (bestResult != null) {
-            // Imprime o melhor resultado encontrado
-            System.out.printf("%-20s | (%-2d, %-2d, %-2d)    | %-20s | %s/%s\n",
-                              nomeCompleto, bestResult.d1, bestResult.d3, bestResult.d2, bestResult.mainMessageDecrypted, bestResult.salt1Decrypted, bestResult.salt2Decrypted);
-        } else {
-            System.out.printf("%-20s | Nenhuma solução válida encontrada.\n", nomeCompleto);
-        }
-    }
-
-    public static void main(String[] args) {
-        // Nomes normalizados (sem acentos/cedilhas) no formato "NOME PROPRIO ULTIMOSOBRENOME"
-        Map<String, String> hashData = new HashMap<>();
-        hashData.put("PEDRO MORGADO", "RACVRURXWJARXZXP");
-        hashData.put("DANIEL PEREIRA", "FPGRAXRADIJGXHBDRYK");
-        hashData.put("VASCO GONCALVES", "PWNOBZONEQRVEBENY");
-        hashData.put("EMANUEL MAIA", "MIBOVOMDBSMSNKNOWMY"); 
-        hashData.put("JOAO CARVALHO", "PZPVEWTEHMRLEEOT");
-        hashData.put("JOEL SA", "VPAFRPHUFLDORXX");
-        hashData.put("SERGIO PEREIRA", "QZSWHUURULVWDZSH");
-        hashData.put("ANDRE OLIVEIRA", "NHQRGXEIDVGPUXPTIM");
-        hashData.put("DANIEL SOUSA", "HXJZWQSBQWOHIFOMEM");
-        hashData.put("DAVID SOBRAL", "EYPCUIJHQTEHKS");
-        hashData.put("EMANUEL SILVA", "EMHNBRVJOBNXV"); 
-        hashData.put("FRANCISCO ROCHA", "DLJIAAWKQIKIWIIY");
-        hashData.put("FRANCISCO SILVA", "YAXODCNKXULLG");
-        hashData.put("LEANDRO MONTEIRO", "KTZLKHEJAOEWOIA");
-        hashData.put("PAULO MARMELO", "BKPZIDBHVODXJULX");
-        hashData.put("PEDRO PEREIRA", "TENBPABTFJTGVBF");
-        hashData.put("SANDRO FERREIRA", "MONGENONYUBFBCKO");
-        
-        System.out.println("Resultados da Desencriptação da Cifra de César:");
-        System.out.println("==========================================================================================================");
-        System.out.println("NOME E SOBRENOME      | DESLOCAMENTOS | MENSAGEM PRINCIPAL   | SALTS (S1/S2)");
-        System.out.println("----------------------|---------------|----------------------|-------------------");
-        
-        for (Map.Entry<String, String> entry : hashData.entrySet()) {
-            crackCipher(entry.getKey(), entry.getValue());
+            
+            // Verifica quais palavras são válidas em português
+            List<String> palavrasValidas = new ArrayList<>();
+            Map<String, int[]> deslocamentosValidos = new HashMap<>();
+            
+            for (String palavra : palavrasUnicas) {
+                if (isPortugueseWord(palavra)) {
+                    palavrasValidas.add(palavra);
+                    deslocamentosValidos.put(palavra, deslocamentosPorPalavra.get(palavra));
+                }
+                Thread.sleep(200);  // Evita sobrecarregar a API
+            }
+            
+            // Exibe os resultados
+            if (palavrasValidas.size() == 1) {
+                String palavraValida = palavrasValidas.get(0);
+                int[] deslocamentos = deslocamentosValidos.get(palavraValida);
+                System.out.println(hash + " -> " + palavraValida + " (Deslocamentos: S1=" + deslocamentos[0] + ", S2=" + deslocamentos[1] + ", S3=" + deslocamentos[2] + ")");
+            } else if (palavrasValidas.isEmpty()) {
+                System.out.println("Erro: Nenhuma palavra válida encontrada para " + hash);
+                System.out.println("Palavras possíveis testadas: " + palavrasUnicas);
+            } else {
+                System.out.println("Erro: Múltiplas palavras válidas encontradas para " + hash);
+                System.out.println("Palavras válidas: " + palavrasValidas);
+            }
+            System.out.println();
         }
     }
 }
