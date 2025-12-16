@@ -91,7 +91,7 @@ public class App {
 
                 // 6. Exibe os resultados técnicos
                 System.out.println("   PEPPER: " + pepper + " | Inicio: " + inicio +
-                        " | SALT: " + salt + " | Deslocamento: " + shift);
+                        " | SALT: " + salt + " |");
 
                 // Remove informação heurística para mostrar apenas a palavra
                 String cleanWord = validResult.split(" \\(")[0];
